@@ -100,7 +100,7 @@ set(RAUC_HAWKBIT_SRCS
 add_executable( rauc-hawkbit-updater ${RAUC_HAWKBIT_SRCS} )
 target_compile_options(rauc-hawkbit-updater PUBLIC -Wall -Wformat-nonliteral)
 if (QA_BUILD)
-  target_compile_options(rauc-hawkbit-updater PUBLIC -Werror -pedantic)
+  target_compile_options(rauc-hawkbit-updater PUBLIC -Werror -pedantic -Wbad-function-cast -Wcast-align -Wdeclaration-after-statement -Wempty-body -Wformat-security -Wimplicit-fallthrough=3 -Wold-style-declaration -Wpointer-arith -Wshadow -Wsign-compare -Wtype-limits -Wunused-but-set-parameter)
 endif (QA_BUILD)
 
 target_link_libraries( rauc-hawkbit-updater LINK_PUBLIC ${GIO_LIBRARIES}
