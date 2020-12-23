@@ -56,6 +56,7 @@
 #include "hawkbit-client.h"
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(CURL, curl_easy_cleanup)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(gboolean, g_free)
 
 gboolean run_once = FALSE;
 
@@ -741,7 +742,8 @@ gboolean install_complete_cb(gpointer ptr)
  * feedback and call software_ready_cb() callback on success.
  *
  * @param[in] data Artifact* to process
- * @return NULL is always returned
+ * @return if download thread waited for installation to finish, TRUE if installation succeded,
+ *         FALSE otherwise; if download thread did not wait for installation to finish, TRUE
  */
 static gpointer download_thread(gpointer data)
 {
@@ -749,11 +751,13 @@ static gpointer download_thread(gpointer data)
                 .install_progress_callback = (GSourceFunc) hawkbit_progress,
                 .install_complete_callback = install_complete_cb,
                 .file = hawkbit_config->bundle_download_location,
+                .install_success = TRUE,
         };
         g_autoptr(GError) error = NULL, feedback_error = NULL;
         g_autofree gchar *msg = NULL, *sha1sum = NULL;
         g_autoptr(Artifact) artifact = data;
         curl_off_t speed;
+        g_autoptr(gboolean) thread_ret = g_new0(gboolean, 1);
 
         g_return_val_if_fail(data, NULL);
 
@@ -795,7 +799,8 @@ static gpointer download_thread(gpointer data)
 
         software_ready_cb(&userdata);
 
-        return NULL;
+        *thread_ret = userdata.install_success;
+        return g_steal_pointer(&thread_ret);
 
 report_err:
         g_mutex_trylock(&active_action->mutex);
@@ -806,7 +811,8 @@ report_err:
         process_deployment_cleanup();
         g_mutex_unlock(&active_action->mutex);
 
-        return NULL;
+        *thread_ret = FALSE;
+        return g_steal_pointer(&thread_ret);
 }
 
 /**
