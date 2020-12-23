@@ -1037,8 +1037,11 @@ static gboolean hawkbit_pull_cb(gpointer user_data)
 
 out:
         if (run_once) {
-                if (thread_download)
-                        g_thread_join(thread_download);
+                if (thread_download) {
+                        g_autoptr(gboolean) thread_ret = NULL;
+                        thread_ret = g_thread_join(thread_download);
+                        res = thread_ret ? *thread_ret : FALSE;
+                }
 
                 data->res = res ? 0 : 1;
                 g_main_loop_quit(data->loop);
