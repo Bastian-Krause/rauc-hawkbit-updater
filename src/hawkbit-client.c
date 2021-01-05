@@ -68,6 +68,17 @@ static const char *HTTPMethod_STRING[] = {
         "GET", "HEAD", "PUT", "POST", "PATCH", "DELETE"
 };
 
+static const CURLcode resumable_codes[] = {
+        CURLE_OPERATION_TIMEDOUT,
+        CURLE_COULDNT_RESOLVE_HOST,
+        CURLE_COULDNT_CONNECT,
+        CURLE_PARTIAL_FILE,
+        CURLE_SEND_ERROR,
+        CURLE_RECV_ERROR,
+        CURLE_HTTP2,
+        CURLE_HTTP2_STREAM,
+};
+
 static Config *hawkbit_config = NULL;
 static GSourceFunc software_ready_cb;
 static struct HawkbitAction *active_action = NULL;
@@ -265,13 +276,24 @@ static gboolean get_binary(const gchar *download_url, const gchar *file, gchar *
         glong http_code = 0;
         struct curl_slist *headers = NULL;
         g_autofree gchar *token = NULL;
+        curl_off_t resume_from = 0;
 
         g_return_val_if_fail(download_url, FALSE);
         g_return_val_if_fail(file, FALSE);
         g_return_val_if_fail(sha1sum == NULL || *sha1sum == NULL, FALSE);
         g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
-        fp = g_fopen(file, "wb+");
+        if (hawkbit_config->resume_downloads) {
+                GStatBuf bundle_stat;
+
+                if (!g_stat(file, &bundle_stat)) {
+                        resume_from = (curl_off_t) bundle_stat.st_size;
+                        if (resume_from)
+                                g_debug("Resuming download from offset %ld", bundle_stat.st_size);
+                }
+        }
+
+        fp = g_fopen(file, (resume_from) ? "ab+" : "wb+");
         if (!fp) {
                 int err = errno;
                 g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
@@ -297,6 +319,8 @@ static gboolean get_binary(const gchar *download_url, const gchar *file, gchar *
         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, hawkbit_config->low_speed_time);
         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, hawkbit_config->low_speed_rate);
 
+        curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, resume_from);
+
         if (!set_auth_curl_header(&headers, error))
                 return FALSE;
 
@@ -317,7 +341,8 @@ static gboolean get_binary(const gchar *download_url, const gchar *file, gchar *
                             curl_easy_strerror(curl_code));
                 return FALSE;
         }
-        if (http_code != 200) {
+        // consider ok/partial download/range not satisfiable (EOF reached) as success
+        if (http_code != 200 && http_code != 206 && http_code != 416) {
                 g_set_error(error, RHU_HAWKBIT_CLIENT_HTTP_ERROR, http_code,
                             "HTTP request failed: %ld", http_code);
                 return FALSE;
@@ -771,7 +796,7 @@ static gpointer download_thread(gpointer data)
         g_autoptr(GError) error = NULL, feedback_error = NULL;
         g_autofree gchar *msg = NULL, *sha1sum = NULL;
         g_autoptr(Artifact) artifact = data;
-        curl_off_t speed;
+        curl_off_t speed = 0;
         g_autoptr(gboolean) thread_ret = g_new0(gboolean, 1);
 
         g_return_val_if_fail(data, NULL);
@@ -786,16 +811,40 @@ static gpointer download_thread(gpointer data)
 
         g_message("Start downloading: %s", artifact->download_url);
 
-        // Download software bundle (artifact)
-        if (!get_binary(artifact->download_url, hawkbit_config->bundle_download_location,
-                        &sha1sum, &speed, &error)) {
-                g_prefix_error(&error, "Download failed: ");
-                goto report_err;
-        }
+        while (1) {
+                const CURLcode *resumable_code;
+                gboolean resumable = FALSE;
+                g_free(sha1sum);
+                sha1sum = NULL;
 
-        g_mutex_lock(&active_action->mutex);
-        if (active_action->state == ACTION_STATE_CANCEL_REQUESTED)
-                goto cancel;
+                // Download software bundle (artifact)
+                if (get_binary(artifact->download_url, hawkbit_config->bundle_download_location,
+                               &sha1sum, &speed, &error))
+                        break;
+
+                resumable_code = &resumable_codes[0];
+                while (*resumable_code) {
+                        resumable |= g_error_matches(error, RHU_HAWKBIT_CLIENT_CURL_ERROR,
+                                                     *resumable_code);
+                        resumable_code++;
+                }
+
+                if (!hawkbit_config->resume_downloads || !resumable) {
+                        g_prefix_error(&error, "Download failed: ");
+                        goto report_err;
+                }
+                g_debug("%s, resuming download..", curl_easy_strerror(error->code));
+
+                g_mutex_lock(&active_action->mutex);
+                if (active_action->state == ACTION_STATE_CANCEL_REQUESTED)
+                        goto cancel;
+                g_mutex_unlock(&active_action->mutex);
+
+                g_clear_error(&error);
+
+                // sleep 0.5 s
+                g_usleep(500000);
+        }
 
         // notify hawkbit that download is complete
         msg = g_strdup_printf("Download complete. %.2f MB/s",
