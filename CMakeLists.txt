@@ -106,6 +106,8 @@ add_custom_command(
 		COMMAND ${CODEGEN_COMMAND}
 		COMMAND mv ${CODEGEN_PREFIX}.c ${CMAKE_CURRENT_SOURCE_DIR}/src/
 		COMMAND mv ${CODEGEN_PREFIX}.h ${CMAKE_CURRENT_SOURCE_DIR}/include/
+		COMMAND cat ${CMAKE_CURRENT_SOURCE_DIR}/src/rauc-installer-gen.c
+		COMMAND cat ${CMAKE_CURRENT_SOURCE_DIR}/include/rauc-installer-gen.h
 )
 
 set(RAUC_HAWKBIT_SRCS
