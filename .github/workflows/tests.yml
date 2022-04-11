@@ -41,7 +41,7 @@ jobs:
 
     - name: Install test dependencies
       run: |
-        sudo apt-get install libgirepository1.0-dev python3-virtualenv nginx-full
+        sudo apt-get install libgirepository1.0-dev nginx-full
         python -m pip install --upgrade pip
         pip install -r test-requirements.txt
 
@@ -60,7 +60,7 @@ jobs:
     - name: Run test suite
       run: |
         ./test/wait-for-hawkbit-online
-        ASAN_OPTIONS=fast_unwind_on_malloc=0 dbus-run-session -- pytest -v
+        ASAN_OPTIONS=fast_unwind_on_malloc=0 dbus-run-session -- python -m pytest -v
 
   docs:
     runs-on: ubuntu-latest
