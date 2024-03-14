@@ -141,3 +141,20 @@ def test_download_only(hawkbit, config, assign_bundle):
 
     # check last status message
     assert 'File checksum OK.' in status[0]['messages']
+
+def test_download_without_auth_header(adjust_config, hawkbit, assign_bundle,
+                                      download_without_auth_headers_port):
+    """
+    Test that rauc-hawkbit-updater does not send authentication header with
+    send_download_auth_header=false.
+    """
+    config = adjust_config({'client': {
+        'send_download_auth_header': 'false',
+        'hawkbit_server': f'{hawkbit.host}:{download_without_auth_headers_port}'
+    }})
+    assign_bundle(params={'type': 'downloadonly'})
+
+    out, err, exitcode = run(f'rauc-hawkbit-updater -c "{config}" -r')
+    assert 'HTTP request failed: 401' not in err
+    assert 'Start downloading' in out
+    assert exitcode == 1

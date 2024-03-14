@@ -1,0 +1,11 @@
+# serves only if no auth headers are provided
+location ~*/.*/controller/v1/test-target/softwaremodules/.*/artifacts/ {
+    content_by_lua_block {
+        local auth_header = ngx.req.get_headers()["authorization"]
+        if auth_header then
+            ngx.exit(ngx.HTTP_UNAUTHORIZED)
+        else
+            ngx.exit(ngx.HTTP_OK)
+        end
+    }
+}
