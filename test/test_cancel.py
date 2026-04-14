@@ -27,7 +27,8 @@ def test_cancel_before_poll(hawkbit, adjust_config, bundle_assigned, rauc_dbus_i
 
     cancel = hawkbit.get_action()
     assert cancel['type'] == 'cancel'
-    assert cancel['status'] == 'finished'
+    # earlier hawkBit versions reported status as "finished", >= 1.0 as "canceled"
+    assert cancel['status'] in ('finished', 'canceled')
 
     cancel_status = hawkbit.get_action_status()
     assert cancel_status[0]['type'] == 'canceled'
@@ -66,7 +67,8 @@ def test_cancel_during_download(hawkbit, adjust_config, bundle_assigned, rate_li
 
     cancel = hawkbit.get_action()
     assert cancel['type'] == 'cancel'
-    assert cancel['status'] == 'finished'
+    # earlier hawkBit versions reported status as "finished", >= 1.0 as "canceled"
+    assert cancel['status'] in ('finished', 'canceled')
 
     cancel_status = hawkbit.get_action_status()
     assert cancel_status[0]['type'] == 'canceled'
